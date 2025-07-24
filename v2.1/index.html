@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>QR [&] Text Scanner</title>
+  <style>
+    html, body {
+      margin: 0;
+      overflow: hidden;
+      background: black;
+      height: 100%;
+      font-family: sans-serif;
+      /* -webkit-user-select: none; */
+      /* -webkit-touch-callout: none; */
+      touch-action: manipulation;
+    }
+
+    video, canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+    }
+
+    #url-list {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      font-size: 14px;
+      color: white;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 10px;
+      border-radius: 8px;
+      max-width: 45vw;
+      max-height: 30vh;
+      overflow-y: auto;
+      user-select: text;
+    }
+
+    #text-output {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      font-size: 14px;
+      color: white;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 10px;
+      border-radius: 8px;
+      max-width: 45vw;
+      max-height: 30vh;
+      overflow-y: auto;
+      text-align: right;
+      user-select: text;
+    }
+
+    #capture-btn {
+      position: absolute;
+      bottom: 20px;      
+      left: 50%;          /* move it to the horizontal center */
+      transform: translateX(-50%);  /* shift left by half its width to truly center */
+      padding: 30px 35px;
+      font-size: 40px;
+      background: rgba(0, 0, 0, 0.5);
+      color: white;
+      border: 3px solid white;
+      border-radius: 10px;
+      cursor: pointer;
+      user-select: none;
+      touch-action: manipulation;
+    }
+
+    .url-item {
+      margin-bottom: 5px;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+
+  <video id="video" autoplay muted playsinline></video>
+  <canvas id="qr-canvas"></canvas>
+  <canvas id="capture-canvas" style="display: none;"></canvas>
+
+  <button id="capture-btn">📸 Capture Text</button>
+
+  <div id="url-list"></div>
+  <div id="text-output">Initializing camera...</div>
+
+  
+  <script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
+
+
+
+  <script>
+    const video = document.getElementById('video');
+    const qrCanvas = document.getElementById('qr-canvas');
+    const qrCtx = qrCanvas.getContext('2d');
+    const urlList = document.getElementById('url-list');
+    const captureCanvas = document.getElementById('capture-canvas');
+    const textOutput = document.getElementById('text-output');
+    const captureBtn = document.getElementById('capture-btn');
+
+    const trackedQRCodes = new Map();
+    const offscreenCanvas = document.createElement('canvas');
+    const offCtx = offscreenCanvas.getContext('2d');
+
+    function getRandomColor() {
+      const hue = Math.floor(Math.random() * 360);
+      return `hsl(${hue}, 100%, 50%)`;
+    }
+
+    function resizeCanvas() {
+      qrCanvas.width = window.innerWidth;
+      qrCanvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          }
+        });
+        video.srcObject = stream;
+        await video.play();
+        resizeCanvas();
+        textOutput.textContent = 'Camera ready. Tap Capture to detect text.';
+        requestAnimationFrame(scanFrame);
+      } catch (err) {
+        textOutput.textContent = 'Camera error: ' + err.message;
+      }
+    }
+    startCamera();
+
+    function scanFrame() {
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        const vw = qrCanvas.width;
+        const vh = qrCanvas.height;
+
+        qrCtx.clearRect(0, 0, vw, vh);
+        qrCtx.drawImage(video, 0, 0, vw, vh);
+
+        const scanWidth = 320;
+        const aspectRatio = video.videoHeight / video.videoWidth;
+        const scanHeight = Math.floor(scanWidth * aspectRatio);
+
+        offscreenCanvas.width = scanWidth;
+        offscreenCanvas.height = scanHeight;
+        offCtx.drawImage(video, 0, 0, scanWidth, scanHeight);
+
+        const imageData = offCtx.getImageData(0, 0, scanWidth, scanHeight);
+        const code = jsQR(imageData.data, scanWidth, scanHeight, { inversionAttempts: "dontInvert" });
+
+        if (code) {
+          if (!trackedQRCodes.has(code.data)) {
+            trackedQRCodes.set(code.data, {
+              color: getRandomColor(),
+              lastSeen: Date.now(),
+              location: code.location
+            });
+          } else {
+            const qr = trackedQRCodes.get(code.data);
+            qr.lastSeen = Date.now();
+            qr.location = code.location;
+          }
+        }
+
+        const now = Date.now();
+        for (const [data, qr] of trackedQRCodes.entries()) {
+          if (now - qr.lastSeen > 1000) {
+            trackedQRCodes.delete(data);
+          }
+        }
+
+        drawTrackedQRCodes(vw, vh, scanWidth, scanHeight);
+        updateURLList();
+      }
+      requestAnimationFrame(scanFrame);
+    }
+
+    function drawTrackedQRCodes(viewWidth, viewHeight, scanWidth, scanHeight) {
+      const scaleX = viewWidth / scanWidth;
+      const scaleY = viewHeight / scanHeight;
+      const time = Date.now() / 1000;
+
+      for (const qr of trackedQRCodes.values()) {
+        const loc = qr.location;
+        if (!loc) continue;
+
+        const points = [
+          loc.topLeftCorner,
+          loc.topRightCorner,
+          loc.bottomRightCorner,
+          loc.bottomLeftCorner
+        ].map(p => ({
+          x: p.x * scaleX,
+          y: p.y * scaleY
+        }));
+
+        qrCtx.strokeStyle = qr.color;
+        qrCtx.lineWidth = 4;
+        qrCtx.beginPath();
+        qrCtx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+          qrCtx.lineTo(points[i].x, points[i].y);
+        }
+        qrCtx.closePath();
+        qrCtx.stroke();
+
+        const t = (time % 4);
+        const edge = Math.floor(t);
+        const prog = t - edge;
+        const from = points[edge];
+        const to = points[(edge + 1) % 4];
+        const cx = from.x + (to.x - from.x) * prog;
+        const cy = from.y + (to.y - from.y) * prog;
+
+        const cubeSize = 25;
+        const angle = time * 2 * Math.PI;
+
+        qrCtx.save();
+        qrCtx.translate(cx, cy);
+        qrCtx.rotate(angle);
+        qrCtx.fillStyle = qr.color;
+        qrCtx.fillRect(-cubeSize / 2, -cubeSize / 2, cubeSize, cubeSize);
+        qrCtx.strokeStyle = "#000";
+        qrCtx.lineWidth = 2;
+        qrCtx.strokeRect(-cubeSize / 2, -cubeSize / 2, cubeSize, cubeSize);
+        qrCtx.restore();
+      }
+    }
+
+    function updateURLList() {
+      urlList.innerHTML = '';
+
+      for (const [data, qr] of trackedQRCodes.entries()) {
+        const div = document.createElement('div');
+        div.className = 'url-item';
+        div.style.color = qr.color;
+        div.textContent = data.length > 120 ? data.slice(0, 120) + '…' : data;
+        urlList.appendChild(div);
+      }
+    }
+
+    // Point in polygon check (ray casting)
+    function pointInPolygon(point, polygon) {
+      let inside = false;
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i].x, yi = polygon[i].y;
+        const xj = polygon[j].x, yj = polygon[j].y;
+
+        const intersect = ((yi > point.y) !== (yj > point.y)) &&
+                          (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    // Handle touch event on canvas
+    qrCanvas.addEventListener('touchend', (event) => {
+      if (event.changedTouches.length > 0) {
+        const touch = event.changedTouches[0];
+        const rect = qrCanvas.getBoundingClientRect();
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+
+        const scanWidth = 320;
+        const scanHeight = Math.floor(scanWidth * (video.videoHeight / video.videoWidth));
+        const scaleX = qrCanvas.width / scanWidth;
+        const scaleY = qrCanvas.height / scanHeight;
+
+        for (const [data, qr] of trackedQRCodes.entries()) {
+          if (!qr.location) continue;
+
+          const polygon = [
+            qr.location.topLeftCorner,
+            qr.location.topRightCorner,
+            qr.location.bottomRightCorner,
+            qr.location.bottomLeftCorner
+          ].map(p => ({
+            x: p.x * scaleX,
+            y: p.y * scaleY
+          }));
+
+          if (pointInPolygon({x, y}, polygon)) {
+            window.open(data, '_blank');
+            break;
+          }
+        }
+      }
+    });
+
+    // OCR text capture
+    async function captureText() {
+      captureCanvas.width = video.videoWidth;
+      captureCanvas.height = video.videoHeight;
+      const ctx = captureCanvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+      const imageDataURL = captureCanvas.toDataURL('image/png');
+
+      textOutput.textContent = 'Recognizing text...';
+
+      try {
+        const result = await Tesseract.recognize(imageDataURL, 'eng');
+        const text = result.data.text.trim();
+        const confidence = result.data.confidence;
+
+        if (text && confidence > 60) {
+          textOutput.textContent = text;
+        } else {
+          textOutput.textContent = '(No clear text found)';
+        }
+      } catch (err) {
+        console.error('OCR error:', err);
+        textOutput.textContent = 'OCR error occurred.';
+      }
+    }
+
+    function handleCapture(e) {
+      e.preventDefault();
+      captureText();
+    }
+
+    captureBtn.addEventListener('touchend', handleCapture);
+
+  </script>
+</body>
+</html>
