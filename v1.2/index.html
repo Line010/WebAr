@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Multi QR Scanner with rotational Cube</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+    <!-- Display live camera feed : raw camera -->
+    <video id="video" autoplay muted playsinline></video>
+
+    <!-- Draws QR code detection boxes and visual overlays : captured individual frames -->
+    <canvas id="qr-canvas"></canvas>
+
+    <!-- List the detected QR code data -> url links used for now -->
+    <div id="url-list"></div>
+
+    <!-- Reads QR codes from image data -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"></script>
+
+    <!-- Used for cube drawing (not essential here but included for compatibility) -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+
+    <!-- Modular JS Files -->
+    <script src="js/web-setup.js" defer></script>
+    <script src="js/qr-scanner.js" defer></script>
+    <script src="js/cube-renderer.js" defer></script>
+</body>
+</html>
