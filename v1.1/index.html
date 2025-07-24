@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>1 Qrcode Scanner</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    video, canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      object-fit: cover;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- pour placer la cam sur l'ecran -->
+<video id="video" autoplay playsinline muted></video>
+  
+  <!-- analyse image de cam-->  
+<canvas id="qr-canvas"></canvas>
+  
+  <!-- le canva ou on dessine le 3d cube -->
+<canvas id="three-canvas"></canvas>
+
+  <!-- lit les qr code à partir des images -->
+<script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"></script>
+  
+  <!-- Dessiner des shapes 3D  -->
+<script src="https://unpkg.com/three@0.152.0/build/three.min.js"></script>
+
+<script>
+  /* ---------- DOM refs ---------- */
+const video = document.getElementById('video');
+const qrCanvas = document.getElementById('qr-canvas'); //pour dessiner image capturer
+const qrCtx = qrCanvas.getContext('2d'); //scan qr , dessine bordure
+const threeCanvas = document.getElementById('three-canvas'); //pour afficher objets 3d
+
+/* ---------- scene 3D et perspective ---------- */
+const scene = new THREE.Scene();
+//fov,ratio(cadre w/h), near(dist min),fat(dist max)
+const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.01, 100);
+camera.position.z = 1; //on regarde l'origine
+
+const renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, alpha: true }); //moteur de rendu WebGL avec transparance du font
+renderer.setClearColor(0x000000, 0); //font invisible
+
+  /* ---------- Cube par defaut cacher----------*/
+const cube = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshNormalMaterial());
+scene.add(cube);
+cube.visible = false;
+
+
+// Handle touch detection
+const raycaster = new THREE.Raycaster(); //detecter ce qu'on touche ou clique
+const pointer = new THREE.Vector2(); //pos du doigt
+let currentQrData = ''; //plus tard pour stoquer lien de qrcode
+
+threeCanvas.addEventListener('touchstart', (event) => { //toucher
+  const touch = event.touches[0]; //1er doigt toucher si plusieur en meme temps
+  const rect = threeCanvas.getBoundingClientRect(); //recupere dim et pos du canva par rapport 
+
+  const x = touch.clientX - rect.left; //dist de doigt touche dans le canva
+  const y = touch.clientY - rect.top;
+
+  //coordonnées NDC en -1 1
+  pointer.x = (x / rect.width) * 2 - 1;
+  pointer.y = -(y / rect.height) * 2 + 1; //- car en pixel haut c + et bas c-
+
+  //raycaster envoie un rayon depuis la caméra vers l’endroit touché
+  raycaster.setFromCamera(pointer, camera);
+  const intersects = raycaster.intersectObject(cube); //rayon touche cube?
+
+  if (intersects.length > 0 && cube.visible && currentQrData) { //si cube visible et qu;il y a du data renvoyer vers lien
+    console.log('Touched!');
+    window.open(currentQrData, '_blank');
+  }
+});
+
+/* ---------- Resize handeler ---------- */
+//dessin sync avec taille de fenetre
+function syncCanvasSizes() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  qrCanvas.width = w;
+  qrCanvas.height = h;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', syncCanvasSizes);
+
+// met a jour le render de scene e rotation de cube looper
+function renderLoop() {
+  requestAnimationFrame(renderLoop);
+  if (cube.visible) {
+    cube.rotation.x += 0.02;
+    cube.rotation.y += 0.02;
+  }
+  renderer.render(scene, camera);
+}
+renderLoop();
+
+/* ---------- Camera stream ---------- */
+// demande au navigateur la permission d'utiliser la cam
+
+navigator.mediaDevices.getUserMedia({
+  video: {
+    facingMode: 'environment',
+    width: { ideal: 1920 },
+    height: { ideal: 1080 }
+  }
+})
+.then(stream => {
+  video.srcObject = stream;
+  video.onloadedmetadata = () => {
+    video.play();
+    syncCanvasSizes();
+    tick(); // start QR detection loop
+  };
+})
+.catch(err => alert('Camera access denied: ' + err.message));
+
+/* ---------- Helper to draw QR outline ---------- */
+function outline(location) {
+  qrCtx.strokeStyle = 'lime';
+  qrCtx.lineWidth = 4;
+  qrCtx.beginPath();
+  qrCtx.moveTo(location.topLeftCorner.x, location.topLeftCorner.y);
+  qrCtx.lineTo(location.topRightCorner.x, location.topRightCorner.y);
+  qrCtx.lineTo(location.bottomRightCorner.x, location.bottomRightCorner.y);
+  qrCtx.lineTo(location.bottomLeftCorner.x, location.bottomLeftCorner.y);
+  qrCtx.closePath();
+  qrCtx.stroke();
+}
+
+/* ---------- Main loop ---------- */
+function tick() {
+  const screenW = qrCanvas.width;
+  const screenH = qrCanvas.height;
+
+  qrCtx.drawImage(video, 0, 0, screenW, screenH);
+  const img = qrCtx.getImageData(0, 0, screenW, screenH);
+  const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+
+  if (code) {
+    outline(code.location); //dessiner green border si n'importe quel qrcode detecter
+    currentQrData = code.data;
+
+    if (code.data === 'https://goo.gl/maps/fcsmcKtxNzx') {
+      const tl = code.location.topLeftCorner;
+      const br = code.location.bottomRightCorner;
+
+      /* ---- center et size ---- */
+      const cx = (tl.x + br.x) / 2;
+      const cy = (tl.y + br.y) / 2;
+      const qrSize = (Math.abs(br.x - tl.x) + Math.abs(br.y - tl.y)) / 2;
+
+      /* ---- ecran 2d -> espace 3D ---- */
+      //position 2d de centre de qrcode normaliser 
+      //x,y est de -1 a 1 
+      const ndcX = (cx / screenW) * 2 - 1;
+      const ndcY = -(cy / screenH) * 2 + 1;
+
+      const vec = new THREE.Vector3(ndcX, ndcY, 0.5).unproject(camera);
+      const dir = vec.clone().sub(camera.position).normalize();
+      const dist = 0.5; // distance from camera
+      const pos3D = camera.position.clone().add(dir.multiplyScalar(dist));
+
+      // QR texture
+      const qrSide = Math.floor(Math.abs(br.x - tl.x));
+      const qrImgCanvas = document.createElement('canvas');
+      qrImgCanvas.width = qrSide;
+      qrImgCanvas.height = qrSide;
+      const qrImgCtx = qrImgCanvas.getContext('2d');
+      qrImgCtx.drawImage(qrCanvas, tl.x, tl.y, qrSide, qrSide, 0, 0, qrSide, qrSide);
+      const qrTexture = new THREE.CanvasTexture(qrImgCanvas);
+      qrTexture.minFilter = THREE.NearestFilter;
+      qrTexture.magFilter = THREE.NearestFilter;
+      cube.material = new THREE.MeshBasicMaterial({ map: qrTexture });
+      cube.material.needsUpdate = true;
+
+      cube.position.copy(pos3D);
+      cube.scale.setScalar(qrSize / 2000);
+      cube.visible = true;
+    } else {
+      cube.visible = false;
+    }
+  } else {
+    cube.visible = false;
+  }
+
+  requestAnimationFrame(tick);
+}
+</script>
+
+</body>
+</html>
