@@ -7,9 +7,9 @@
     <style>
       body { margin: 0; overflow: hidden; }
       a-scene { width: 100vw; height: 100vh; }
-    </style>
-  </head>
-  <body>
+      </style>
+    </head>
+    <body>
     <a-scene
       mindar-image="imageTargetSrc: targets.mind; maxTrack: 1;"
       color-space="sRGB"
@@ -18,7 +18,7 @@
       device-orientation-permission-ui="enabled: false" 
     >
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
-      
+
       <!-- Image targets: vide pour ensuite ajouter cube quand detecter-->
       <a-entity id="target0" mindar-image-target="targetIndex: 0"></a-entity>
       <a-entity id="target1" mindar-image-target="targetIndex: 1"></a-entity>
@@ -36,45 +36,47 @@
     </a-scene>
 
     <script>
-  const modelUrl = 'scene.gltf';
+  let currentTarget = null;
 
+  // pour affichage dynamique de chaque cube par rapport a l'image scannée
   const targetPositions = {
-    0: "0 1.5 0",
-    1: "-1 0.5 0",
-    2: "0 -0.5 0",
-    3: "0 0.5 0",
-    4: "-1 -0.5 0",
-    5: "1 1.5 0",
-    6: "1 -0.5 0",
-    7: "1 -1.5 0",
-    8: "-1 1.5 0",
-    9: "0 -1.5 0",
-    10: "-1 -1.5 0"
+    0: "0 1.5 1.5",
+    1: "-1 0.5 1.5",
+    2: "0 -0.5 1.5",
+    3: "0 0.5 1.5",
+    4: "-1 -0.5 1.5",
+    5: "1 1.5 1.5",
+    6: "1 -0.5 1.5",
+    7: "1 -1.5 1.5",
+    8: "-1 1.5 1.5",
+    9: "0 -1.5 1.5",
+    10: "-1 -1.5 1.5"
   };
 
   for (let i = 0; i <= 10; i++) {
     const target = document.querySelector(`#target${i}`);
 
     target.addEventListener("targetFound", () => {
-      // prevent duplicates for this target
-      if (!target.querySelector(".active-model")) {
-        const model = document.createElement("a-entity");
-        model.setAttribute("gltf-model", `url(${modelUrl})`);
-        model.setAttribute("position", targetPositions[i]);
-        model.setAttribute("scale", "0.5 0.5 0.5");
-        model.setAttribute("rotation", "0 -90 0");
-        model.setAttribute("class", "active-model");
+      if (currentTarget === null) {
+        currentTarget = i;
 
-        target.appendChild(model);
+        const cube = document.createElement("a-box");
+        cube.setAttribute("color", "lime");
+        cube.setAttribute("scale", "0.3 0.3 0.3");
+        cube.setAttribute("position", targetPositions[i]);
+        cube.setAttribute("id", "current-cube");
+        target.appendChild(cube);
       }
     });
 
     target.addEventListener("targetLost", () => {
-      const model = target.querySelector(".active-model");
-      if (model) model.remove();
+      if (currentTarget === i) {
+        const cube = document.querySelector("#current-cube");
+        if (cube) cube.remove();
+        currentTarget = null;
+      }
     });
   }
 </script>
-
   </body>
 </html>
