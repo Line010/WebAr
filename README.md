@@ -7,8 +7,8 @@
 ## VERSION 1.2: 2d cube turning arround qrCode
 A 2d cube that is turning on itself, turns arround the qrCode on it's frame. Same libraries used.
 
-## VERSION 2.1: 3d cube appear on Image tracking
+## VERSION 3.1: 3d cube appear on Image tracking
 A cube appears in the middle of a bunch of scanned images pre-uploaded. MindAr library(derived from Three.js and a-frame) was only used.
 
-## VERSION 2.2: 3d-Model appear on Image tracking
+## VERSION 3.2: 3d-Model appear on Image tracking
 A 3d Model appears in the middle of the same scanned images pre-uploaded. Same libraries used.
