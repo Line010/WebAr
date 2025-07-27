@@ -1,5 +1,6 @@
 # WebAr-3dCube-On-qrCode
 
+⚠️ **Note:** This is the ongoing version of the project I've been developing during my internship. It is not the official or final version. Please refer to [that page] for the final release.
 
 ## VERSION 1.1: 3d cube on top of qrCode
 3d cube appears on top of the detected qrCode which is framed by a green border. i used a mix of jsQr.js and three.js for this part.
